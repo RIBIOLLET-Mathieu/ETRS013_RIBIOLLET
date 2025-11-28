@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="fr">
+   <head>
+      <meta charset="UTF-8" />
+      <title>Calcul du temps de trajet (SOAP)</title>
+
+      <style>
+         body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+         }
+
+         #background {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #e0e0e0;
+            z-index: 0;
+         }
+
+         #panel {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            width: 320px;
+            padding: 20px;
+
+            background: linear-gradient(to bottom, #4da0ff, #0077cc);
+            color: white;
+            border-radius: 12px;
+
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+            z-index: 10;
+         }
+
+         .input-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+         }
+
+         .input-row input {
+            width: 90px;
+            padding: 4px;
+            border-radius: 6px;
+            border: none;
+            text-align: right;
+         }
+
+         button {
+            margin-top: 15px;
+            width: 100%;
+            padding: 8px;
+            border: none;
+            border-radius: 6px;
+            background-color: #ffa500;
+            font-weight: bold;
+            cursor: pointer;
+         }
+
+         button:hover {
+            background-color: #ffb733;
+         }
+
+         .result {
+            margin-top: 20px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            font-size: 1.1em;
+         }
+      </style>
+   </head>
+   <body>
+      <div id="background"></div>
+
+      <div id="panel">
+         <h2>Calcul trajet</h2>
+
+         <form action="/calcul" method="post">
+            <div class="input-row">
+               <label>Distance (km) :</label>
+               <input type="number" name="distance" required />
+            </div>
+
+            <div class="input-row">
+               <label>Autonomie (km) :</label>
+               <input type="number" name="autonomie" required />
+            </div>
+
+            <div class="input-row">
+               <label>Recharge (min) :</label>
+               <input type="number" name="recharge" required />
+            </div>
+
+            <button type="submit">Calculer</button>
+         </form>
+
+         {% if resultat is not none %}
+         <div class="result">Temps total : {{ resultat }} heures</div>
+         {% endif %}
+      </div>
+   </body>
+</html>
