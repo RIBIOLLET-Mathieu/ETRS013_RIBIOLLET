@@ -32,9 +32,10 @@ class TrajetService(ServiceBase):
         return temps_conduite + temps_total_recharge
 
 
-def get_station_proche(latitude, longitude, rayon_m=3000):
+def get_stations_proche(latitude, longitude, rayon_m, max_rows=200):
     """
-    Interroge l'API IRVE d'ODRE et retourne les mêmes champs que la requête officielle.
+    Retourne toutes les bornes IRVE dans un rayon donné,
+    en filtrant strictement par distance et en supprimenant les doublons.
     """
 
     url = "https://odre.opendatasoft.com/api/records/1.0/search/"
@@ -42,48 +43,64 @@ def get_station_proche(latitude, longitude, rayon_m=3000):
     params = {
         "dataset": "bornes-irve",
         "geofilter.distance": f"{latitude},{longitude},{rayon_m}",
-        "rows": 1,
+        "rows": max_rows,
     }
 
     try:
-        r = requests.get(url, params=params, timeout=5)
-        r.encoding = "utf-8"  # garantit un décodage correct côté Python
+        r = requests.get(url, params=params, timeout=8)
         r.raise_for_status()
         data = r.json()
 
         if "records" not in data or not data["records"]:
-            return {"error": True, "message": "Aucune borne trouvée à proximité."}
+            return {"error": True, "message": "Aucune borne trouvée dans le rayon."}
 
-        record = data["records"][0]
-        fields = record["fields"]
-        geometry = record.get("geometry", {})
+        stations = []
+        seen_coords = set()
 
-        coords = geometry.get("coordinates", [None, None])
+        for record in data["records"]:
+            fields = record.get("fields", {})
+            geometry = record.get("geometry", {})
 
-        # Champs identiques à la réponse ODRE
-        response = {
-            "id_station": fields.get("id_station"),
-            "id_pdc": fields.get("id_pdc"),
-            "station": fields.get("ad_station") or fields.get("n_station"),
-            "n_amenageur": fields.get("n_amenageur"),
-            "n_enseigne": fields.get("n_enseigne"),
-            "n_operateur": fields.get("n_operateur"),
-            "accessibilite": fields.get("accessibilite"),
-            "acces_recharge": fields.get("acces_recharge"),
-            "type_prise": fields.get("type_prise"),
-            "nbre_pdc": fields.get("nbre_pdc"),
-            "puiss_max": fields.get("puiss_max"),
-            "commune": fields.get("commune"),
-            "departement": fields.get("departement"),
-            "region": fields.get("region"),
-            "date_maj": fields.get("date_maj"),
-            "source": fields.get("source"),
-            "latitude": coords[1],
-            "longitude": coords[0],
-            "distance_m": fields.get("dist"),
+            coords = geometry.get("coordinates", [None, None])
+            lon, lat = coords[0], coords[1]
+
+            if lat is None or lon is None:
+                continue
+
+            # distance renvoyée par ODRE → convertir en float
+            dist_raw = fields.get("dist")
+            if dist_raw is None:
+                continue
+
+            try:
+                distance = float(dist_raw)
+            except:
+                continue  # valeur invalide → on ignore
+
+            # filtrage strict
+            if distance > float(rayon_m):
+                continue
+
+            # suppression doublons
+            if (lat, lon) in seen_coords:
+                continue
+            seen_coords.add((lat, lon))
+
+            station_info = {
+                "station": fields.get("ad_station") or fields.get("n_station"),
+                "acces_recharge": fields.get("acces_recharge"),
+                "latitude": lat,
+                "longitude": lon,
+                "distance_m": distance,
+            }
+
+            stations.append(station_info)
+
+        return {
+            "error": False,
+            "count": len(stations),
+            "stations": sorted(stations, key=lambda x: x["distance_m"]),
         }
-
-        return response
 
     except Exception as e:
         return {"error": True, "message": str(e)}

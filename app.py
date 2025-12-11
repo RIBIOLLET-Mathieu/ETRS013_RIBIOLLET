@@ -1,12 +1,13 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify, Response
 from zeep import Client
 from flask import session
-from service_projet import get_station_proche
+from service_projet import get_stations_proche
 import json
 import requests
 from flask import jsonify, request
+import openrouteservice as ors
 
-ORS_API_KEY = "TA_CLE_API_ORS"  # Remplace par la tienne
+ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImViOTg3ZGVjMGY2ODQ1YTliMGM1YTI2Y2ZjYzliZDczIiwiaCI6Im11cm11cjY0In0="  # Remplace par la tienne
 
 app = Flask(__name__)
 app.secret_key = "12345"  # clé pour utiliser la session
@@ -52,6 +53,7 @@ def resultat_page():
 def station():
     lat = request.args.get("lat")
     lon = request.args.get("lon")
+    rayon = request.args.get("rayon")
 
     if not lat or not lon:
         return Response(
@@ -60,7 +62,7 @@ def station():
             status=400,
         )
 
-    data = get_station_proche(lat, lon)
+    data = get_stations_proche(lat, lon, rayon)
 
     return Response(
         json.dumps(data, ensure_ascii=False), mimetype="application/json; charset=utf-8"
@@ -71,41 +73,57 @@ def station():
 
 
 # ------------- | Point 3) | ---------------
-def get_route(city_start, city_end):
-    """
-    Retourne la géométrie du trajet entre deux villes via OpenRouteService.
-    """
+def geocode_city(city):
+    url = "https://api.openrouteservice.org/geocode/search"
 
-    # 1. Géocodage
-    geocode_url = "https://api.openrouteservice.org/geocode/search"
+    headers = {"Authorization": ORS_API_KEY}
+    params = {"text": city}
 
-    coords = []
-    for city in (city_start, city_end):
-        r = requests.get(geocode_url, params={"api_key": ORS_API_KEY, "text": city})
-        r.raise_for_status()
-
-        result = r.json()
-        if not result["features"]:
-            return {"error": True, "message": f"Ville inconnue : {city}"}
-
-        lon, lat = result["features"][0]["geometry"]["coordinates"]
-        coords.append([lon, lat])
-
-    # 2. Calcul du trajet
-    directions_url = "https://api.openrouteservice.org/v2/directions/driving-car"
-
-    headers = {"Authorization": ORS_API_KEY, "Content-Type": "application/json"}
-
-    body = {"coordinates": coords}
-
-    r = requests.post(directions_url, json=body, headers=headers)
+    r = requests.get(url, headers=headers, params=params)
     r.raise_for_status()
-
     data = r.json()
 
-    geometry = data["features"][0]["geometry"]["coordinates"]
+    coords = data["features"][0]["geometry"]["coordinates"]
 
-    return {"error": False, "route": geometry}
+    lon = coords[0]
+    lat = coords[1]
+
+    return lat, lon  # <- IMPORTANT : tu renvoies dans l’ordre que tu veux utiliser
+
+
+def get_route(start_coords, end_coords):
+    directions_url = "https://api.openrouteservice.org/v2/directions/driving-car"
+
+    body = {
+        "coordinates": [
+            [start_coords[1], start_coords[0]],
+            [end_coords[1], end_coords[0]],
+        ]
+    }
+
+    headers = {
+        "Authorization": f"Bearer {ORS_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    r = requests.post(directions_url, json=body, headers=headers)
+    data = r.json()
+
+    if "routes" not in data or len(data["routes"]) == 0:
+        return {"error": True, "message": "ORS n’a retourné aucune route."}
+
+    route = data["routes"][0]
+
+    # 🔥 DECODE DE LA POLYLINE (la grosse chaîne que tu as reçue)
+    decoded = ors.convert.decode_polyline(route["geometry"])
+
+    # print(f"Infos retournées du backend (calcul trajet) :\nDistance_m: {route['summary']['distance']}\nDuration_s: {route['summary']['duration']}\nGeometry: {decoded}")
+
+    return {
+        "distance_m": route["summary"]["distance"],
+        "duration_s": route["summary"]["duration"],
+        "geometry": decoded,  # → maintenant structure GeoJSON
+    }
 
 
 @app.route("/route")
@@ -116,8 +134,16 @@ def api_route():
     if not start or not end:
         return jsonify({"error": True, "message": "start et end obligatoires"})
 
-    return jsonify(get_route(start, end))
+    try:
+        start_coords = geocode_city(start)
+        end_coords = geocode_city(end)
+
+        route = get_route(start_coords, end_coords)
+        return jsonify(route)
+
+    except Exception as e:
+        return jsonify({"error": True, "message": str(e)})
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5050)
