@@ -6,6 +6,10 @@ import json
 import requests
 from flask import jsonify, request
 import openrouteservice as ors
+import pprint
+
+import time
+
 
 ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImViOTg3ZGVjMGY2ODQ1YTliMGM1YTI2Y2ZjYzliZDczIiwiaCI6Im11cm11cjY0In0="  # Remplace par la tienne
 
@@ -139,10 +143,151 @@ def api_route():
         end_coords = geocode_city(end)
 
         route = get_route(start_coords, end_coords)
+
         return jsonify(route)
 
     except Exception as e:
         return jsonify({"error": True, "message": str(e)})
+
+
+# ------------- | Point 4) | ---------------
+CHARGETRIP_URL = "https://api.chargetrip.io/graphql"
+CHARGETRIP_CLIENT_ID = "693c273e71c4b62cdd1c4fd8"
+CHARGETRIP_APP_ID = "693c273e71c4b62cdd1c4fda"
+
+
+def debug_print(title, data):
+    print("\n==============================")
+    print(title)
+    print("==============================")
+    pprint.pprint(data)
+    print("==============================\n")
+
+
+@app.route("/vehicules")
+def api_vehicules():
+    page = int(request.args.get("page", 0))
+    size = int(request.args.get("size", 20))
+
+    query = f"""
+    query {{
+      vehicleList(page: {page}, size: {size}) {{
+        id
+        naming {{
+          make
+          model
+          version
+        }}
+        battery {{
+          usable_kwh
+        }}
+        range {{
+          chargetrip_range {{
+            best
+            worst
+          }}
+        }}
+        media {{
+          image {{
+            thumbnail_url
+          }}
+        }}
+      }}
+    }}
+    """
+
+    headers = {
+        "x-client-id": CHARGETRIP_CLIENT_ID,
+        "x-app-id": CHARGETRIP_APP_ID,
+        "Content-Type": "application/json",
+    }
+
+    try:
+        r = requests.post(CHARGETRIP_URL, json={"query": query}, headers=headers)
+        resp_json = r.json()
+
+        # debug_print("DEBUG", resp_json)
+
+        if "data" not in resp_json or "vehicleList" not in resp_json["data"]:
+            return (
+                jsonify(
+                    {"error": True, "message": "Format inattendu", "raw": resp_json}
+                ),
+                500,
+            )
+
+        return jsonify({"error": False, "vehicules": resp_json["data"]["vehicleList"]})
+
+    except Exception as e:
+        return jsonify({"error": True, "message": str(e)}), 500
+
+
+@app.route("/vehicule/<id>")
+def api_vehicule(id):
+    """
+    Détail d'un véhicule + estimation du temps de recharge
+    (car Chargetrip ne fournit pas charging/charge_time dans ce plan)
+    """
+    query = f"""
+    query {{
+      vehicle(id: "{id}") {{
+        id
+        naming {{
+          make
+          model
+          version
+        }}
+        battery {{
+          usable_kwh
+        }}
+        range {{
+          chargetrip_range {{
+            best
+            worst
+          }}
+        }}
+        media {{
+          image {{
+            thumbnail_url
+          }}
+        }}
+      }}
+    }}
+    """
+
+    headers = {
+        "x-client-id": CHARGETRIP_CLIENT_ID,
+        "x-app-id": CHARGETRIP_APP_ID,
+        "Content-Type": "application/json",
+    }
+
+    try:
+        r = requests.post(CHARGETRIP_URL, json={"query": query}, headers=headers)
+        resp = r.json()
+
+        print("\n=== DEBUG VEHICULE ===")
+        pprint.pprint(resp)
+
+        veh = resp.get("data", {}).get("vehicle")
+        if not veh:
+            return (
+                jsonify(
+                    {"error": True, "message": "Véhicule introuvable", "raw": resp}
+                ),
+                404,
+            )
+
+        # ---- ESTIMATION recharge (le seul possible sans premium) ----
+        usable = veh.get("battery", {}).get("usable_kwh") or 50  # kWh
+        FAST_POWER = 150  # kW
+        recharge_estimee = int((usable / FAST_POWER) * 60)  # minutes
+
+        veh["recharge_estimee"] = recharge_estimee
+
+        return jsonify({"error": False, "vehicule": veh})
+
+    except Exception as e:
+        return jsonify({"error": True, "message": str(e)}), 500
 
 
 if __name__ == "__main__":
