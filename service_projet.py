@@ -1,35 +1,50 @@
-from spyne import Application, rpc, ServiceBase, Float
+from spyne import Application, rpc, ServiceBase, Float, Integer, ComplexModel
 from spyne.protocol.soap import Soap11
 from spyne.server.wsgi import WsgiApplication
 from wsgiref.simple_server import make_server
 import requests
+import math
+
+
+class TrajetResult(ComplexModel):
+    total_h = Float
+    nb_recharges = Integer
+    recharge_min_total = Float
 
 
 class TrajetService(ServiceBase):
 
-    @rpc(Float, Float, Float, _returns=Float)
+    @rpc(Float, Float, Float, _returns=TrajetResult)
     def calcul_temps_trajet(ctx, distance_km, autonomie_km, temps_recharge_min):
-        """
-        distance_km : distance totale du trajet
-        autonomie_km : autonomie du véhicule (km)
-        temps_recharge_min : temps d'une recharge complète (minutes)
-        """
+
         if autonomie_km <= 0:
-            raise ValueError("L'autonomie doit être positive.")
+            raise ValueError("Autonomie invalide")
 
-        # Convertir minutes -> heures
-        temps_recharge_h = temps_recharge_min / 60.0
+        # ⚡ PARAMÈTRE MÉTIER (DOIT matcher le frontend)
+        SEUIL_RECHARGE = 0.2  # 20 %
 
-        # Nombre de recharges nécessaires
-        nb_recharges = max(0, int(distance_km // autonomie_km))
+        # 🚗 Autonomie réellement exploitable
+        autonomie_utilisable = autonomie_km * (1 - SEUIL_RECHARGE)
 
-        # Temps de conduite (vitesse moyenne 100 km/h)
-        temps_conduite = distance_km / 100.0
+        # ⏱️ Temps de conduite
+        vitesse_moyenne = 80.0  # km/h
+        temps_conduite_h = distance_km / vitesse_moyenne
 
-        # Temps total de recharge
-        temps_total_recharge = nb_recharges * temps_recharge_h
+        # 🔁 Segments réels
+        segments = math.ceil(distance_km / autonomie_utilisable)
+        nb_recharges = max(0, segments - 1)
 
-        return temps_conduite + temps_total_recharge
+        # 🔌 Temps de recharge
+        recharge_min_total = nb_recharges * temps_recharge_min
+        temps_recharge_h = recharge_min_total / 60.0
+
+        total_h = temps_conduite_h + temps_recharge_h
+
+        return TrajetResult(
+            total_h=total_h,
+            nb_recharges=nb_recharges,
+            recharge_min_total=recharge_min_total,
+        )
 
 
 def get_stations_proche(latitude, longitude, rayon_m, max_rows=200):

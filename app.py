@@ -49,6 +49,29 @@ def resultat_page():
     return render_template("index.html", resultat=resultat)
 
 
+@app.route("/api/calcul_trajet", methods=["POST"])
+def api_calcul_trajet():
+    data = request.json
+
+    try:
+        distance = float(data["distance"])
+        autonomie = float(data["autonomie"])
+        recharge = float(data["recharge"])
+    except Exception:
+        return jsonify({"error": True, "message": "Paramètres invalides"}), 400
+
+    res = client.service.calcul_temps_trajet(distance, autonomie, recharge)
+
+    return jsonify(
+        {
+            "error": False,
+            "total_h": round(res.total_h, 4),
+            "nb_recharges": res.nb_recharges,
+            "recharge_min_total": res.recharge_min_total,
+        }
+    )
+
+
 # ------------------------------------------
 
 
@@ -288,6 +311,31 @@ def api_vehicule(id):
 
     except Exception as e:
         return jsonify({"error": True, "message": str(e)}), 500
+
+
+# ------------- | Point 5) | --------------- Trajet via les bornes
+@app.route("/route_multi", methods=["POST"])
+def api_route_multi():
+    data = request.json
+    coords = data.get("coords")
+
+    body = {"coordinates": [[lon, lat] for lat, lon in coords]}
+
+    headers = {
+        "Authorization": f"Bearer {ORS_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    r = requests.post(
+        "https://api.openrouteservice.org/v2/directions/driving-car",
+        json=body,
+        headers=headers,
+    )
+
+    route = r.json()["routes"][0]
+    decoded = ors.convert.decode_polyline(route["geometry"])
+
+    return jsonify({"distance_m": route["summary"]["distance"], "geometry": decoded})
 
 
 if __name__ == "__main__":

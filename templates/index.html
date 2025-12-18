@@ -124,7 +124,8 @@
 
             <!-- RESULTAT -->
             <div id="resultat-zone" class="alert alert-info mt-3 d-none">
-               Temps total : <b id="resultat-value"></b>
+               <div>Temps total : <b id="resultat-value"></b></div>
+               <div class="text-muted mt-1" id="resultat-recharges"></div>
             </div>
          </div>
       </div>
@@ -135,11 +136,15 @@
       <script>
          /* ----------------- CARTE ------------------ */
 
+         let stationsLayer = null;
+         let routeLayer = null;
+
          var map = L.map('map').setView([46.5, 2.5], 6);
          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
          }).addTo(map);
-         let routeLayer = null;
+
+         stationsLayer = L.layerGroup().addTo(map);
 
          /* ----------------- VEHICULES ------------------ */
 
@@ -162,8 +167,9 @@
          }
 
          function chargerDetailsVehicule(id) {
-            if (vehiculeDetailsCache[id])
+            if (vehiculeDetailsCache[id]) {
                return Promise.resolve(vehiculeDetailsCache[id]);
+            }
 
             return fetch(`/vehicule/${id}`)
                .then((res) => res.json())
@@ -183,11 +189,11 @@
                v.range?.chargetrip_range?.best ?? v.range?.chargetrip_range?.worst ?? 0;
 
             document.getElementById('vehicle-display').innerHTML = `
-                        <img src="${img}" class="vehicle-img">
-                        <div><strong>${name}</strong></div>
-                        <div class="text-muted">Autonomie : ${autonomyList} km</div>
-                        <div class="text-muted" id="recharge-info">Recharge : ...</div>
-                     `;
+      <img src="${img}" class="vehicle-img">
+      <div><strong>${name}</strong></div>
+      <div class="text-muted">Autonomie : ${autonomyList} km</div>
+      <div class="text-muted" id="recharge-info">Recharge : ...</div>
+   `;
 
             chargerDetailsVehicule(v.id).then((full) => {
                const recharge = full?.recharge_estimee ?? 30;
@@ -200,11 +206,10 @@
                   'recharge-info',
                ).innerText = `Recharge : ${recharge} min`;
 
-               // Mise à jour automatique du formulaire
                document.querySelector("input[name='autonomie']").value = autonomy;
                document.querySelector("input[name='recharge']").value = recharge;
 
-               recalculerTrajet(); // ⚡ recalcul automatique
+               // ⛔ Aucun calcul ici (logique respectée)
             });
          }
 
@@ -212,111 +217,174 @@
             currentIndex = (currentIndex - 1 + vehicules.length) % vehicules.length;
             afficherVehicule();
          };
+
          document.getElementById('next-vehicle').onclick = () => {
             currentIndex = (currentIndex + 1) % vehicules.length;
             afficherVehicule();
          };
 
-         /* ----------------- TRAJET ------------------ */
+         /* ----------------- UTILITAIRES BORNES ------------------ */
 
-         document.getElementById('form-route').addEventListener('submit', function (e) {
-            e.preventDefault();
+         function borneLaPlusProche(point, stations) {
+            let min = Infinity;
+            let best = null;
 
-            const start = document.getElementById('start').value;
-            const end = document.getElementById('end').value;
+            stations.forEach((s) => {
+               const d = map.distance(point, [s.latitude, s.longitude]);
+               if (d < min) {
+                  min = d;
+                  best = s;
+               }
+            });
 
-            fetch(`/route?start=${start}&end=${end}`)
-               .then((res) => res.json())
-               .then((data) => {
-                  if (data.error) {
-                     alert(data.message);
-                     return;
-                  }
-
-                  const coords = data.geometry.coordinates;
-                  const latlngs = coords.map((c) => [c[1], c[0]]);
-
-                  if (routeLayer) map.removeLayer(routeLayer);
-                  routeLayer = L.polyline(latlngs, { color: 'blue', weight: 5 }).addTo(
-                     map,
-                  );
-
-                  map.fitBounds(routeLayer.getBounds());
-
-                  // Distance en km
-                  const km = (data.distance_m / 1000).toFixed(1);
-                  document.querySelector("input[name='distance']").value = km;
-
-                  recalculerTrajet(); // ⚡ recalcul automatique
-               });
-         });
-
-         /* helper: formatte un total en heures en "XX min" ou "H h MM min" */
-         function formatHoursToHuman(total_hours) {
-            const total_minutes = Math.round(total_hours * 60);
-            if (total_minutes < 60) return `${total_minutes} min`;
-            const h = Math.floor(total_minutes / 60);
-            const m = total_minutes % 60;
-            return m === 0 ? `${h} h` : `${h} h ${m} min`;
+            return best;
          }
 
-         /* nouvelle version de recalculerTrajet() */
+         function afficherStations(stations) {
+            stationsLayer.clearLayers();
+
+            const svgIcon = `
+      <svg width="30" height="30" viewBox="0 0 24 24">
+         <circle cx="12" cy="12" r="11" fill="#27ae60"/>
+         <path d="M13 2L6 14h5l-1 8 7-12h-5l1-8z" fill="white"/>
+      </svg>
+   `;
+
+            stations.forEach((s) => {
+               const icon = L.divIcon({
+                  html: svgIcon,
+                  iconSize: [30, 30],
+                  iconAnchor: [15, 15],
+                  className: '',
+               });
+
+               L.marker([s.latitude, s.longitude], { icon })
+                  .bindPopup(
+                     `<b>${s.station}</b><br>
+             Recharge VE<br>
+             ${Math.round(s.distance_m)} m`,
+                  )
+                  .addTo(stationsLayer);
+            });
+         }
+
+         /* ----------------- CALCUL TEMPS FINAL ------------------ */
+
          async function recalculerTrajet() {
             const d = parseFloat(document.querySelector("input[name='distance']").value);
             const a = parseFloat(document.querySelector("input[name='autonomie']").value);
             const r = parseFloat(document.querySelector("input[name='recharge']").value);
 
-            if (isNaN(d) || isNaN(a) || isNaN(r) || d <= 0 || a <= 0 || r <= 0) {
-               document.getElementById('resultat-zone').classList.add('d-none');
-               return;
-            }
+            if (isNaN(d) || isNaN(a) || isNaN(r)) return;
 
-            // appel SOAP → retourne total_h, nb_recharges, recharge_min_total
-            const soapEnvelope = `
-    <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-                      xmlns:tra="tns">
-      <soapenv:Body>
-        <tra:calcul_temps_trajet>
-          <distance_km>${d}</distance_km>
-          <autonomie_km>${a}</autonomie_km>
-          <temps_recharge_min>${r}</temps_recharge_min>
-        </tra:calcul_temps_trajet>
-      </soapenv:Body>
-    </soapenv:Envelope>
-  `;
-
-            const response = await fetch('/soap', {
+            const response = await fetch('/api/calcul_trajet', {
                method: 'POST',
-               headers: { 'Content-Type': 'text/xml' },
-               body: soapEnvelope,
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({ distance: d, autonomie: a, recharge: r }),
             });
 
-            const txt = await response.text();
+            const data = await response.json();
+            if (data.error) return;
 
-            // on parse le XML
-            const parser = new DOMParser();
-            const xml = parser.parseFromString(txt, 'text/xml');
+            const totalMin = Math.round(data.total_h * 60);
+            const h = Math.floor(totalMin / 60);
+            const m = totalMin % 60;
 
-            // valeurs récupérées
-            const total_h = parseFloat(xml.querySelector('total_h')?.textContent || 0);
-            const nb_rec = parseFloat(
-               xml.querySelector('nb_recharges')?.textContent || 0,
-            );
-            const rec_min = parseFloat(
-               xml.querySelector('recharge_min_total')?.textContent || 0,
-            );
+            document.getElementById('resultat-value').innerText =
+               m === 0 ? `${h} h` : `${h} h ${m} min`;
 
-            // Formatage humain
-            const human = formatHoursToHuman(total_h);
-
-            // Affichage dans le DOM
-            document.getElementById('resultat-value').innerText = human;
-            document.getElementById(
-               'resultat-recharges',
-            ).innerText = `${nb_rec} recharge(s) • ${rec_min} min au total`;
+            document.getElementById('resultat-recharges').innerText =
+               data.nb_recharges > 0
+                  ? `${data.nb_recharges} recharge(s) • ${data.recharge_min_total} min`
+                  : 'Aucune recharge nécessaire';
 
             document.getElementById('resultat-zone').classList.remove('d-none');
          }
+      </script>
+
+      <script>
+         document
+            .getElementById('form-route')
+            .addEventListener('submit', async function (e) {
+               e.preventDefault();
+
+               const start = document.getElementById('start').value;
+               const end = document.getElementById('end').value;
+
+               const autonomie = parseFloat(
+                  document.querySelector("input[name='autonomie']").value,
+               );
+
+               /* 1️⃣ Géométrie brute (sans affichage) */
+               const res = await fetch(`/route?start=${start}&end=${end}`);
+               const data = await res.json();
+               if (data.error) {
+                  alert(data.message);
+                  return;
+               }
+
+               const latlngs = data.geometry.coordinates.map((c) => [c[1], c[0]]);
+
+               /* 2️⃣ Sélection INTELLIGENTE des bornes */
+               const seuil = autonomie * 0.2;
+               let autonomieRestante = autonomie;
+               let dernierPoint = latlngs[0];
+               let bornesChoisies = [];
+
+               for (let i = 1; i < latlngs.length; i++) {
+                  const d = map.distance(dernierPoint, latlngs[i]) / 1000;
+                  autonomieRestante -= d;
+
+                  if (autonomieRestante <= seuil) {
+                     const [lat, lon] = latlngs[i];
+                     const r = await fetch(`/station?lat=${lat}&lon=${lon}&rayon=2000`);
+                     const sdata = await r.json();
+
+                     if (!sdata.error && sdata.stations.length) {
+                        const borne = borneLaPlusProche(latlngs[i], sdata.stations);
+                        bornesChoisies.push(borne);
+                        autonomieRestante = autonomie;
+                        dernierPoint = [borne.latitude, borne.longitude];
+                     }
+                  } else {
+                     dernierPoint = latlngs[i];
+                  }
+               }
+
+               /* 3️⃣ Trajet FINAL */
+               const coordsFinales = [
+                  latlngs[0],
+                  ...bornesChoisies.map((b) => [b.latitude, b.longitude]),
+                  latlngs[latlngs.length - 1],
+               ];
+
+               const r2 = await fetch('/route_multi', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ coords: coordsFinales }),
+               });
+
+               const d2 = await r2.json();
+               const finalLatLngs = d2.geometry.coordinates.map((c) => [c[1], c[0]]);
+
+               /* 4️⃣ Affichage UNIQUE */
+               if (routeLayer) map.removeLayer(routeLayer);
+               routeLayer = L.polyline(finalLatLngs, {
+                  color: 'blue',
+                  weight: 5,
+               }).addTo(map);
+
+               map.fitBounds(routeLayer.getBounds());
+
+               /* 5️⃣ Bornes utiles uniquement */
+               afficherStations(bornesChoisies);
+
+               /* 6️⃣ Distance + temps FINAL */
+               const km = (d2.distance_m / 1000).toFixed(1);
+               document.querySelector("input[name='distance']").value = km;
+
+               await recalculerTrajet();
+            });
       </script>
    </body>
 </html>
