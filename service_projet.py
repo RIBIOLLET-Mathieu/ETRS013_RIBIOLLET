@@ -14,8 +14,10 @@ class TrajetResult(ComplexModel):
 
 class TrajetService(ServiceBase):
 
-    @rpc(Float, Float, Float, _returns=TrajetResult)
-    def calcul_temps_trajet(ctx, distance_km, autonomie_km, temps_recharge_min):
+    @rpc(Float, Float, Float, Integer, _returns=TrajetResult)
+    def calcul_temps_trajet(
+        ctx, distance_km, autonomie_km, temps_recharge_min, nb_recharges
+    ):
 
         if autonomie_km <= 0:
             raise ValueError("Autonomie invalide")
@@ -30,11 +32,8 @@ class TrajetService(ServiceBase):
         vitesse_moyenne = 80.0  # km/h
         temps_conduite_h = distance_km / vitesse_moyenne
 
-        # 🔁 Segments réels
-        segments = math.ceil(distance_km / autonomie_utilisable)
-        nb_recharges = max(0, segments - 1)
-
         # 🔌 Temps de recharge
+        temps_conduite_h = distance_km / 80.0
         recharge_min_total = nb_recharges * temps_recharge_min
         temps_recharge_h = recharge_min_total / 60.0
 
@@ -48,11 +47,6 @@ class TrajetService(ServiceBase):
 
 
 def get_stations_proche(latitude, longitude, rayon_m, max_rows=200):
-    """
-    Retourne toutes les bornes IRVE dans un rayon donné,
-    en filtrant strictement par distance et en supprimenant les doublons.
-    """
-
     url = "https://odre.opendatasoft.com/api/records/1.0/search/"
 
     params = {
@@ -82,7 +76,6 @@ def get_stations_proche(latitude, longitude, rayon_m, max_rows=200):
             if lat is None or lon is None:
                 continue
 
-            # distance renvoyée par ODRE → convertir en float
             dist_raw = fields.get("dist")
             if dist_raw is None:
                 continue
@@ -90,20 +83,30 @@ def get_stations_proche(latitude, longitude, rayon_m, max_rows=200):
             try:
                 distance = float(dist_raw)
             except:
-                continue  # valeur invalide → on ignore
+                continue
 
-            # filtrage strict
             if distance > float(rayon_m):
                 continue
 
-            # suppression doublons
             if (lat, lon) in seen_coords:
                 continue
             seen_coords.add((lat, lon))
 
+            # 🔍 NOUVELLES INFOS
+            acces = fields.get("acces_recharge")
+            puiss_max = fields.get("puiss_max")
+
+            # 🧪 DEBUG CONSOLE
+            print("----- BORNE IRVE -----")
+            print("Station :", fields.get("ad_station") or fields.get("n_station"))
+            print("Accès   :", acces)
+            print("Puiss max :", puiss_max)
+            print("----------------------")
+
             station_info = {
                 "station": fields.get("ad_station") or fields.get("n_station"),
-                "acces_recharge": fields.get("acces_recharge"),
+                "acces_recharge": acces,
+                "puiss_max": puiss_max,
                 "latitude": lat,
                 "longitude": lon,
                 "distance_m": distance,

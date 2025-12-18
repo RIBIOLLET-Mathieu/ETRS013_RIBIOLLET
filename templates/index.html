@@ -52,6 +52,63 @@
             cursor: pointer;
             color: #0d6efd;
          }
+         #bornes-panel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 320px;
+            height: 100vh;
+            background: #ffffff;
+            box-shadow: -4px 0 15px rgba(0, 0, 0, 0.15);
+            transition: transform 0.3s ease;
+            z-index: 999;
+            display: flex;
+         }
+
+         #bornes-panel.closed {
+            transform: translateX(280px);
+         }
+
+         #toggle-panel {
+            width: 40px;
+            background: #1e293b;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+         }
+
+         #toggle-arrow {
+            font-size: 20px;
+            transition: transform 0.3s ease;
+         }
+
+         #bornes-panel.closed #toggle-arrow {
+            transform: rotate(180deg);
+         }
+
+         .panel-content {
+            padding: 15px;
+            overflow-y: auto;
+            width: 100%;
+         }
+
+         .borne-card {
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-left: 4px solid #22c55e;
+         }
+
+         .borne-card h4 {
+            margin: 0 0 5px 0;
+         }
+
+         .borne-card small {
+            color: #64748b;
+         }
       </style>
    </head>
    <body>
@@ -120,6 +177,22 @@
                   <label class="form-label">Recharge (min) :</label>
                   <input class="form-control" type="number" name="recharge" readonly />
                </div>
+               <label>
+                  Seuil de recharge :
+                  <strong><span id="seuil-valeur">20</span>%</strong>
+               </label>
+               <input type="range" id="seuil" min="5" max="40" value="20" step="5" />
+            </div>
+            <!-- Panneau qui liste les bornes -->
+            <div id="bornes-panel" class="closed">
+               <div id="toggle-panel">
+                  <span id="toggle-arrow">◀</span>
+               </div>
+
+               <div class="panel-content">
+                  <h3>🔌 Bornes utilisées</h3>
+                  <div id="liste-bornes"></div>
+               </div>
             </div>
 
             <!-- RESULTAT -->
@@ -134,6 +207,18 @@
       <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
       <script>
+         let bornesChoisiesGlobal = [];
+
+         /* Slider pour choix du seuil d'autonomie */
+         const slider = document.getElementById('seuil');
+         const affichageSeuil = document.getElementById('seuil-valeur');
+
+         affichageSeuil.innerText = slider.value;
+
+         slider.oninput = () => {
+            affichageSeuil.innerText = slider.value;
+         };
+
          /* ----------------- CARTE ------------------ */
 
          let stationsLayer = null;
@@ -280,13 +365,19 @@
             const response = await fetch('/api/calcul_trajet', {
                method: 'POST',
                headers: { 'Content-Type': 'application/json' },
-               body: JSON.stringify({ distance: d, autonomie: a, recharge: r }),
+               body: JSON.stringify({
+                  distance: d,
+                  autonomie: a,
+                  recharge_total_min: window.tempsRechargeTotal,
+                  nb_recharges: bornesChoisiesGlobal.length,
+               }),
             });
 
             const data = await response.json();
             if (data.error) return;
 
-            const totalMin = Math.round(data.total_h * 60);
+            const totalMin = Math.round(data.drive_h * 60) + window.tempsRechargeTotal;
+
             const h = Math.floor(totalMin / 60);
             const m = totalMin % 60;
 
@@ -294,8 +385,8 @@
                m === 0 ? `${h} h` : `${h} h ${m} min`;
 
             document.getElementById('resultat-recharges').innerText =
-               data.nb_recharges > 0
-                  ? `${data.nb_recharges} recharge(s) • ${data.recharge_min_total} min`
+               bornesChoisiesGlobal.length > 0
+                  ? `${bornesChoisiesGlobal.length} recharge(s) • ${window.tempsRechargeTotal} min`
                   : 'Aucune recharge nécessaire';
 
             document.getElementById('resultat-zone').classList.remove('d-none');
@@ -315,7 +406,12 @@
                   document.querySelector("input[name='autonomie']").value,
                );
 
-               /* 1️⃣ Géométrie brute (sans affichage) */
+               /* 🔋 Capacité batterie (kWh) depuis le véhicule courant */
+               const vehicule = vehicules[currentIndex];
+               const capaciteKwh =
+                  vehiculeDetailsCache[vehicule.id]?.battery?.usable_kwh ?? 50;
+
+               /* 1️⃣ Géométrie brute */
                const res = await fetch(`/route?start=${start}&end=${end}`);
                const data = await res.json();
                if (data.error) {
@@ -326,7 +422,10 @@
                const latlngs = data.geometry.coordinates.map((c) => [c[1], c[0]]);
 
                /* 2️⃣ Sélection INTELLIGENTE des bornes */
-               const seuil = autonomie * 0.2;
+               const seuilPourcent =
+                  parseFloat(document.getElementById('seuil').value) / 100;
+               const seuilKm = autonomie * seuilPourcent;
+
                let autonomieRestante = autonomie;
                let dernierPoint = latlngs[0];
                let bornesChoisies = [];
@@ -335,14 +434,40 @@
                   const d = map.distance(dernierPoint, latlngs[i]) / 1000;
                   autonomieRestante -= d;
 
-                  if (autonomieRestante <= seuil) {
+                  if (autonomieRestante <= seuilKm) {
                      const [lat, lon] = latlngs[i];
                      const r = await fetch(`/station?lat=${lat}&lon=${lon}&rayon=2000`);
                      const sdata = await r.json();
 
                      if (!sdata.error && sdata.stations.length) {
                         const borne = borneLaPlusProche(latlngs[i], sdata.stations);
-                        bornesChoisies.push(borne);
+
+                        /* ⚡ PUISSANCE BORNE */
+                        let puissance = parseFloat(borne.puiss_max);
+                        if (isNaN(puissance)) puissance = 22;
+                        puissance = Math.min(puissance, 150);
+
+                        /* 🔋 ÉNERGIE À RECHARGER (seuil → 80%) */
+                        console.log(capaciteKwh);
+                        console.log(seuilPourcent);
+                        const energieRechargeKwh = capaciteKwh * (0.8 - seuilPourcent);
+
+                        console.log(`${energieRechargeKwh} / ${puissance} * 60`);
+                        /* ⏱️ TEMPS DE RECHARGE (minutes) */
+                        const tempsRechargeMin = Math.round(
+                           (energieRechargeKwh / puissance) * 60,
+                        );
+
+                        bornesChoisies.push({
+                           station: borne.station ?? 'Borne inconnue',
+                           acces: borne.acces_recharge ?? 'Inconnu',
+                           puissance_kw: puissance,
+                           temps_recharge_min: tempsRechargeMin,
+                           latitude: borne.latitude,
+                           longitude: borne.longitude,
+                           distance_m: borne.distance_m ?? 0,
+                        });
+
                         autonomieRestante = autonomie;
                         dernierPoint = [borne.latitude, borne.longitude];
                      }
@@ -378,13 +503,53 @@
 
                /* 5️⃣ Bornes utiles uniquement */
                afficherStations(bornesChoisies);
+               afficherBornesDansPanneau(bornesChoisies);
 
                /* 6️⃣ Distance + temps FINAL */
                const km = (d2.distance_m / 1000).toFixed(1);
                document.querySelector("input[name='distance']").value = km;
 
+               bornesChoisiesGlobal = bornesChoisies;
+               const totalRechargeMin = bornesChoisies.reduce(
+                  (sum, b) => sum + (b.temps_recharge_min ?? 0),
+                  0,
+               );
+
+               window.tempsRechargeTotal = totalRechargeMin;
+
                await recalculerTrajet();
             });
+
+         /* -------- PANNEAU LATERAL -------- */
+
+         const panel = document.getElementById('bornes-panel');
+         const toggle = document.getElementById('toggle-panel');
+
+         toggle.onclick = () => {
+            panel.classList.toggle('closed');
+         };
+
+         function afficherBornesDansPanneau(bornes) {
+            const container = document.getElementById('liste-bornes');
+            container.innerHTML = '';
+
+            if (!bornes.length) {
+               container.innerHTML = '<p>Bonne nouvelle ! Aucune recharge nécessaire</p>';
+               return;
+            }
+
+            bornes.forEach((b, i) => {
+               container.innerHTML += `
+         <div class="borne-card">
+            <h4>Recharge ${i + 1}</h4>
+            <small>${b.station}</small><br>
+            <small>Accès : ${b.acces}</small><br>
+            <small>Puissance : ${b.puissance_kw} kW</small><br>
+            <small>Temps : ${b.temps_recharge_min} min</small>
+         </div>
+      `;
+            });
+         }
       </script>
    </body>
 </html>

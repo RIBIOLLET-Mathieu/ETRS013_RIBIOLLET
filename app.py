@@ -56,11 +56,17 @@ def api_calcul_trajet():
     try:
         distance = float(data["distance"])
         autonomie = float(data["autonomie"])
-        recharge = float(data["recharge"])
-    except Exception:
-        return jsonify({"error": True, "message": "Paramètres invalides"}), 400
+        recharge_total_min = float(data["recharge_total_min"])
+        nb_recharges = int(data.get("nb_recharges", 0))  # ✅ SAFE
+    except Exception as e:
+        return jsonify({"error": True, "message": str(e)}), 400
 
-    res = client.service.calcul_temps_trajet(distance, autonomie, recharge)
+    res = client.service.calcul_temps_trajet(
+        distance,
+        autonomie,
+        recharge_total_min / max(nb_recharges, 1),  # ⛔ recharge PAR borne
+        nb_recharges,
+    )
 
     return jsonify(
         {
