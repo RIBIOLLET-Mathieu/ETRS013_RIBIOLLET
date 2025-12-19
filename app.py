@@ -22,11 +22,18 @@ app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {"/soap": soap_app})
 
 ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImViOTg3ZGVjMGY2ODQ1YTliMGM1YTI2Y2ZjYzliZDczIiwiaCI6Im11cm11cjY0In0="  # Remplace par la tienne
 
-app = Flask(__name__)
-app.secret_key = "12345"  # clé pour utiliser la session
+SOAP_WSDL = os.environ.get(
+    "SOAP_WSDL", "https://USMB-ETRS013-Mathieu-ribiollet.azurewebsites.net/soap?wsdl"
+)
 
-SOAP_WSDL = "http://localhost/soap?wsdl"
-client = Client(SOAP_WSDL)
+_soap_client = None
+
+
+def get_soap_client():
+    global _soap_client
+    if _soap_client is None:
+        _soap_client = Client(SOAP_WSDL)
+    return _soap_client
 
 
 # ------------- | Point 1) | ---------------
@@ -41,7 +48,8 @@ def calcul():
     autonomie = float(request.form["autonomie"])
     recharge = float(request.form["recharge"])
 
-    resultat = client.service.calcul_temps_trajet(distance, autonomie, recharge)
+    client = get_soap_client()
+    client.service.calcul_temps_trajet(distance, autonomie, recharge)
 
     # On stocke temporairement le résultat en session
     # OU dans une variable globale si tu préfères
