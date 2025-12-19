@@ -55,27 +55,14 @@ def api_calcul_trajet():
 
     try:
         distance = float(data["distance"])
-        autonomie = float(data["autonomie"])
-        recharge_total_min = float(data["recharge_total_min"])
-        nb_recharges = int(data.get("nb_recharges", 0))  # ✅ SAFE
     except Exception as e:
         return jsonify({"error": True, "message": str(e)}), 400
 
-    res = client.service.calcul_temps_trajet(
-        distance,
-        autonomie,
-        recharge_total_min / max(nb_recharges, 1),  # ⛔ recharge PAR borne
-        nb_recharges,
-    )
+    # ⏱️ Temps de conduite SEUL
+    vitesse_moyenne = 80.0  # km/h
+    temps_conduite_h = distance / vitesse_moyenne
 
-    return jsonify(
-        {
-            "error": False,
-            "total_h": round(res.total_h, 4),
-            "nb_recharges": res.nb_recharges,
-            "recharge_min_total": res.recharge_min_total,
-        }
-    )
+    return jsonify({"error": False, "drive_h": round(temps_conduite_h, 4)})
 
 
 # ------------------------------------------

@@ -56,7 +56,7 @@
             position: fixed;
             top: 0;
             right: 0;
-            width: 320px;
+            width: 450px;
             height: 100vh;
             background: #ffffff;
             box-shadow: -4px 0 15px rgba(0, 0, 0, 0.15);
@@ -66,7 +66,7 @@
          }
 
          #bornes-panel.closed {
-            transform: translateX(280px);
+            transform: translateX(414px);
          }
 
          #toggle-panel {
@@ -108,6 +108,143 @@
 
          .borne-card small {
             color: #64748b;
+         }
+         /* ---------- THEME MODERNE ---------- */
+
+         :root {
+            --glass-bg: rgba(255, 255, 255, 0.85);
+            --glass-border: rgba(255, 255, 255, 0.3);
+            --shadow-soft: 0 20px 40px rgba(0, 0, 0, 0.25);
+            --primary-gradient: linear-gradient(135deg, #0d6efd, #22c55e);
+         }
+
+         /* Fond carte légèrement assombri */
+         .leaflet-container {
+            filter: saturate(1.1) contrast(1.05);
+         }
+
+         /* ---------- PANNEAUX FLOTTANTS ---------- */
+
+         .custom-card,
+         #route-panel {
+            backdrop-filter: blur(14px);
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            box-shadow: var(--shadow-soft);
+            animation: floatIn 0.6s ease-out;
+         }
+
+         @keyframes floatIn {
+            from {
+               opacity: 0;
+               transform: translateY(20px) scale(0.97);
+            }
+            to {
+               opacity: 1;
+               transform: translateY(0) scale(1);
+            }
+         }
+
+         /* ---------- BOUTONS ---------- */
+
+         .btn-primary {
+            background: var(--primary-gradient);
+            border: none;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+         }
+
+         .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 20px rgba(13, 110, 253, 0.35);
+         }
+
+         /* ---------- CARROUSEL VEHICULE ---------- */
+
+         #vehicle-display {
+            transition: transform 0.3s ease, opacity 0.3s ease;
+         }
+
+         .vehicle-img {
+            transition: transform 0.3s ease;
+         }
+
+         .vehicle-img:hover {
+            transform: scale(1.05);
+         }
+
+         .arrow-btn {
+            transition: transform 0.2s ease, color 0.2s ease;
+         }
+
+         .arrow-btn:hover {
+            transform: scale(1.2);
+            color: #22c55e;
+         }
+
+         /* ---------- SLIDER ---------- */
+
+         input[type='range'] {
+            accent-color: #22c55e;
+         }
+
+         /* ---------- RESULTAT ---------- */
+
+         #resultat-zone {
+            animation: slideUp 0.5s ease forwards;
+         }
+
+         @keyframes slideUp {
+            from {
+               opacity: 0;
+               transform: translateY(10px);
+            }
+            to {
+               opacity: 1;
+               transform: translateY(0);
+            }
+         }
+
+         /* ---------- PANNEAU BORNES ---------- */
+
+         #bornes-panel {
+            backdrop-filter: blur(16px);
+            background: rgba(255, 255, 255, 0.95);
+         }
+
+         .borne-card {
+            animation: fadeInCard 0.4s ease forwards;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+         }
+
+         .borne-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+         }
+
+         @keyframes fadeInCard {
+            from {
+               opacity: 0;
+               transform: translateX(10px);
+            }
+            to {
+               opacity: 1;
+               transform: translateX(0);
+            }
+         }
+
+         /* ---------- MARKERS LEAFLET ---------- */
+
+         .leaflet-marker-icon {
+            animation: popMarker 0.4s ease;
+         }
+
+         @keyframes popMarker {
+            from {
+               transform: scale(0);
+            }
+            to {
+               transform: scale(1);
+            }
          }
       </style>
    </head>
@@ -173,26 +310,11 @@
                   <input class="form-control" type="number" name="autonomie" readonly />
                </div>
 
-               <div>
-                  <label class="form-label">Recharge (min) :</label>
-                  <input class="form-control" type="number" name="recharge" readonly />
-               </div>
                <label>
                   Seuil de recharge :
                   <strong><span id="seuil-valeur">20</span>%</strong>
                </label>
                <input type="range" id="seuil" min="5" max="40" value="20" step="5" />
-            </div>
-            <!-- Panneau qui liste les bornes -->
-            <div id="bornes-panel" class="closed">
-               <div id="toggle-panel">
-                  <span id="toggle-arrow">◀</span>
-               </div>
-
-               <div class="panel-content">
-                  <h3>🔌 Bornes utilisées</h3>
-                  <div id="liste-bornes"></div>
-               </div>
             </div>
 
             <!-- RESULTAT -->
@@ -200,6 +322,16 @@
                <div>Temps total : <b id="resultat-value"></b></div>
                <div class="text-muted mt-1" id="resultat-recharges"></div>
             </div>
+         </div>
+      </div>
+      <div id="bornes-panel" class="closed">
+         <div id="toggle-panel">
+            <span id="toggle-arrow">◀</span>
+         </div>
+
+         <div class="panel-content">
+            <h3>🔌 Bornes utilisées</h3>
+            <div id="liste-bornes"></div>
          </div>
       </div>
 
@@ -223,6 +355,8 @@
 
          let stationsLayer = null;
          let routeLayer = null;
+         let startMarker = null;
+         let endMarker = null;
 
          var map = L.map('map').setView([46.5, 2.5], 6);
          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -230,6 +364,28 @@
          }).addTo(map);
 
          stationsLayer = L.layerGroup().addTo(map);
+
+         /* ---------- ICONES DEPART / ARRIVEE ---------- */
+
+         const startIcon = L.icon({
+            iconUrl:
+               'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+            shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41],
+         });
+
+         const endIcon = L.icon({
+            iconUrl:
+               'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
+            shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41],
+         });
 
          /* ----------------- VEHICULES ------------------ */
 
@@ -273,12 +429,20 @@
             const autonomyList =
                v.range?.chargetrip_range?.best ?? v.range?.chargetrip_range?.worst ?? 0;
 
-            document.getElementById('vehicle-display').innerHTML = `
+            const container = document.getElementById('vehicle-display');
+            container.style.opacity = 0;
+            container.style.transform = 'translateY(10px)';
+
+            setTimeout(() => {
+               container.innerHTML = `
       <img src="${img}" class="vehicle-img">
       <div><strong>${name}</strong></div>
       <div class="text-muted">Autonomie : ${autonomyList} km</div>
       <div class="text-muted" id="recharge-info">Recharge : ...</div>
    `;
+               container.style.opacity = 1;
+               container.style.transform = 'translateY(0)';
+            }, 150);
 
             chargerDetailsVehicule(v.id).then((full) => {
                const recharge = full?.recharge_estimee ?? 30;
@@ -292,7 +456,6 @@
                ).innerText = `Recharge : ${recharge} min`;
 
                document.querySelector("input[name='autonomie']").value = autonomy;
-               document.querySelector("input[name='recharge']").value = recharge;
 
                // ⛔ Aucun calcul ici (logique respectée)
             });
@@ -357,18 +520,18 @@
 
          async function recalculerTrajet() {
             const d = parseFloat(document.querySelector("input[name='distance']").value);
-            const a = parseFloat(document.querySelector("input[name='autonomie']").value);
-            const r = parseFloat(document.querySelector("input[name='recharge']").value);
 
-            if (isNaN(d) || isNaN(a) || isNaN(r)) return;
+            if (isNaN(d)) return;
 
             const response = await fetch('/api/calcul_trajet', {
                method: 'POST',
                headers: { 'Content-Type': 'application/json' },
                body: JSON.stringify({
                   distance: d,
-                  autonomie: a,
-                  recharge_total_min: window.tempsRechargeTotal,
+                  autonomie: parseFloat(
+                     document.querySelector("input[name='autonomie']").value,
+                  ),
+                  recharge: 0, // ⚠️ plus utilisé côté backend
                   nb_recharges: bornesChoisiesGlobal.length,
                }),
             });
@@ -376,7 +539,14 @@
             const data = await response.json();
             if (data.error) return;
 
-            const totalMin = Math.round(data.drive_h * 60) + window.tempsRechargeTotal;
+            // ⏱️ Temps conduite (API)
+            const driveMin = Math.round(data.drive_h * 60);
+
+            // 🔌 Temps recharge (calculé localement)
+            const rechargeMin = window.tempsRechargeTotal ?? 0;
+
+            // ⏱️ Temps total FINAL
+            const totalMin = driveMin + rechargeMin;
 
             const h = Math.floor(totalMin / 60);
             const m = totalMin % 60;
@@ -420,6 +590,26 @@
                }
 
                const latlngs = data.geometry.coordinates.map((c) => [c[1], c[0]]);
+
+               /* 📍 MARQUEURS DEPART / ARRIVEE */
+
+               // Nettoyage anciens markers
+               if (startMarker) map.removeLayer(startMarker);
+               if (endMarker) map.removeLayer(endMarker);
+
+               // Coordonnées
+               const startLatLng = latlngs[0];
+               const endLatLng = latlngs[latlngs.length - 1];
+
+               // Marker départ (rouge)
+               startMarker = L.marker(startLatLng, { icon: startIcon })
+                  .bindPopup('🚩 Départ')
+                  .addTo(map);
+
+               // Marker arrivée (vert)
+               endMarker = L.marker(endLatLng, { icon: endIcon })
+                  .bindPopup('🏁 Arrivée')
+                  .addTo(map);
 
                /* 2️⃣ Sélection INTELLIGENTE des bornes */
                const seuilPourcent =
@@ -497,7 +687,15 @@
                routeLayer = L.polyline(finalLatLngs, {
                   color: 'blue',
                   weight: 5,
+                  opacity: 0.9,
                }).addTo(map);
+               routeLayer.setStyle({ dashArray: '8,12' });
+
+               let offset = 0;
+               setInterval(() => {
+                  offset = (offset - 1) % 20;
+                  routeLayer.setStyle({ dashOffset: offset });
+               }, 60);
 
                map.fitBounds(routeLayer.getBounds());
 
@@ -551,5 +749,6 @@
             });
          }
       </script>
+      <!-- PANNEAU LATERAL BORNES (GLOBAL) -->
    </body>
 </html>
