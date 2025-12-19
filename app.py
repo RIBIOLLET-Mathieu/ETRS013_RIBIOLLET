@@ -340,4 +340,4 @@ if __name__ == "__main__":
     # Montage SOAP dans Flask
     app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {"/soap": soap_app})
 
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="20.111.1.5", port=port)
