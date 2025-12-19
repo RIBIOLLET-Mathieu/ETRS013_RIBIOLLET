@@ -10,10 +10,15 @@ from flask import jsonify, request
 import openrouteservice as ors
 import pprint
 
-
 import time
-
 import os
+
+app = Flask(__name__)
+app.secret_key = "12345"
+
+# Montage SOAP toujours actif
+app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {"/soap": soap_app})
+
 
 ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImViOTg3ZGVjMGY2ODQ1YTliMGM1YTI2Y2ZjYzliZDczIiwiaCI6Im11cm11cjY0In0="  # Remplace par la tienne
 
@@ -333,11 +338,3 @@ def api_route_multi():
     decoded = ors.convert.decode_polyline(route["geometry"])
 
     return jsonify({"distance_m": route["summary"]["distance"], "geometry": decoded})
-
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    # Montage SOAP dans Flask
-    app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {"/soap": soap_app})
-
-    app.run(host="20.111.1.5", port=port)
