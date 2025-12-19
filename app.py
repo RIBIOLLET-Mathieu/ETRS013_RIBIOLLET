@@ -10,6 +10,10 @@ import pprint
 
 import time
 
+import os
+
+port = int(os.environ.get("PORT", 8000))
+app.run(host="0.0.0.0", port=port)
 
 ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImViOTg3ZGVjMGY2ODQ1YTliMGM1YTI2Y2ZjYzliZDczIiwiaCI6Im11cm11cjY0In0="  # Remplace par la tienne
 
@@ -332,4 +336,4 @@ def api_route_multi():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5050)
+    app.run(debug=True, port=8000)

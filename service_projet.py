@@ -137,5 +137,5 @@ wsgi_app = WsgiApplication(application)
 ### --- Lancement du service
 if __name__ == "__main__":
     print("Service SOAP disponible sur http://127.0.0.1:8000")
-    server = make_server("127.0.0.1", 8000, wsgi_app)
+    server = make_server("127.0.0.1", 8080, wsgi_app)
     server.serve_forever()
