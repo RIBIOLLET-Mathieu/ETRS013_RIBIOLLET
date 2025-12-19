@@ -1,4 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify, Response
+from service_projet import wsgi_app as soap_app
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
 from zeep import Client
 from flask import session
 from service_projet import get_stations_proche
@@ -8,19 +10,17 @@ from flask import jsonify, request
 import openrouteservice as ors
 import pprint
 
+
 import time
 
 import os
-
-port = int(os.environ.get("PORT", 8000))
-app.run(host="0.0.0.0", port=port)
 
 ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImViOTg3ZGVjMGY2ODQ1YTliMGM1YTI2Y2ZjYzliZDczIiwiaCI6Im11cm11cjY0In0="  # Remplace par la tienne
 
 app = Flask(__name__)
 app.secret_key = "12345"  # clé pour utiliser la session
 
-SOAP_WSDL = "http://127.0.0.1:8000/?wsdl"
+SOAP_WSDL = "http://localhost/soap?wsdl"
 client = Client(SOAP_WSDL)
 
 
@@ -336,4 +336,8 @@ def api_route_multi():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    # Montage SOAP dans Flask
+    app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {"/soap": soap_app})
+
+    app.run(host="0.0.0.0", port=port)
