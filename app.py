@@ -206,7 +206,7 @@ def get_route(start_coords, end_coords):
         "Content-Type": "application/json",
     }
 
-    r = requests.post(directions_url, json=body, headers=headers)
+    r = requests.post(directions_url, json=body, headers=headers, timeout=8)
     data = r.json()
 
     if "routes" not in data or len(data["routes"]) == 0:

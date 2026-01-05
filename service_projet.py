@@ -79,7 +79,7 @@ def get_stations_proche(latitude, longitude, rayon_m, max_rows=15):
     }
 
     try:
-        r = requests.get(url, params=params, timeout=16)
+        r = requests.get(url, params=params, timeout=5)
         r.raise_for_status()
         data = r.json()
 
