@@ -27,11 +27,11 @@ import pprint
 import os
 
 # Partie sécurité. On envoie pas les clés sur Git et le Cloud
-secret_flask = os.environ.get("SECRET_FLASK")
-ORS_API_KEY = os.environ.get("ORS_API_KEY")
-CHARGETRIP_URL = os.environ.get("CHARGETRIP_URL")
-CHARGETRIP_CLIENT_ID = os.environ.get("CHARGETRIP_CLIENT_ID")
-CHARGETRIP_APP_ID = os.environ.get("CHARGETRIP_APP_ID")
+secret_flask = os.getenv("secret_flask")
+ORS_API_KEY = os.getenv("ORS_API_KEY")
+CHARGETRIP_URL = os.getenv("CHARGETRIP_URL")
+CHARGETRIP_CLIENT_ID = os.getenv("CHARGETRIP_CLIENT_ID")
+CHARGETRIP_APP_ID = os.getenv("CHARGETRIP_APP_ID")
 
 # Sécurité minimale : fail fast si clé manquante
 missing = []
