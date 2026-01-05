@@ -25,13 +25,29 @@ import requests
 import openrouteservice as ors
 import pprint
 import os
-from secrets import (
-    secret_flask,
-    ORS_API_KEY,
-    CHARGETRIP_URL,
-    CHARGETRIP_CLIENT_ID,
-    CHARGETRIP_APP_ID,
-)
+
+# Partie sécurité. On envoie pas les clés sur Git et le Cloud
+secret_flask = os.environ.get("SECRET_FLASK")
+ORS_API_KEY = os.environ.get("ORS_API_KEY")
+CHARGETRIP_URL = os.environ.get("CHARGETRIP_URL")
+CHARGETRIP_CLIENT_ID = os.environ.get("CHARGETRIP_CLIENT_ID")
+CHARGETRIP_APP_ID = os.environ.get("CHARGETRIP_APP_ID")
+
+# Sécurité minimale : fail fast si clé manquante
+missing = []
+if not secret_flask:
+    missing.append("SECRET_FLASK")
+if not ORS_API_KEY:
+    missing.append("ORS_API_KEY")
+if not CHARGETRIP_URL:
+    missing.append("CHARGETRIP_URL")
+if not CHARGETRIP_CLIENT_ID:
+    missing.append("CHARGETRIP_CLIENT_ID")
+if not CHARGETRIP_APP_ID:
+    missing.append("CHARGETRIP_APP_ID")
+
+if missing:
+    raise RuntimeError(f"Variables d'environnement manquantes : {', '.join(missing)}")
 
 # –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 
