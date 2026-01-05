@@ -1,27 +1,52 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, Response
+# ––– IMPORTS –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+# Importation de Flask pour toute la partie Web
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    jsonify,
+    Response,
+    session,
+)
+
+# Le service SOAP (que l'on intégre directement dans le app.py pour fonctionnement correct sur le Cloud)
 from service_projet import wsgi_app as soap_app
-from werkzeug.middleware.dispatcher import DispatcherMiddleware
-from zeep import Client
-from flask import session
 from service_projet import get_stations_proche
+from zeep import Client
+
+# Monter plusieurs apps WSGI
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
+
+# Divers librairies
 import json
 import requests
-from flask import jsonify, request
 import openrouteservice as ors
 import pprint
-
-import time
 import os
+from secrets import (
+    secret_flask,
+    ORS_API_KEY,
+    CHARGETRIP_URL,
+    CHARGETRIP_CLIENT_ID,
+    CHARGETRIP_APP_ID,
+)
 
+# –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+
+
+# ––– INITIALISATION FLASK ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 app = Flask(__name__)
-app.secret_key = "12345"
+app.secret_key = secret_flask
 
-# Montage SOAP toujours actif
+# Le service SOAP sera accessible via /soap. L’application Flask principale reste active
 app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {"/soap": soap_app})
+# –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 
 
-ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImViOTg3ZGVjMGY2ODQ1YTliMGM1YTI2Y2ZjYzliZDczIiwiaCI6Im11cm11cjY0In0="  # Remplace par la tienne
-
+# ––– CLES API EXTERNES –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+# URL du WSDL SOAP
 SOAP_WSDL = os.environ.get(
     "SOAP_WSDL", "https://USMB-ETRS013-Mathieu-ribiollet.azurewebsites.net/soap?wsdl"
 )
@@ -36,24 +61,25 @@ def get_soap_client():
     return _soap_client
 
 
-# ------------- | Point 1) | ---------------
+# –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+
+
+# ––– POINT 1 | Calcul trajet (SOAP + REST) –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 @app.route("/")
 def index():
-    return render_template("index.html")  # aucune donnée → pas de résultat affiché
+    """Page principale. Aucun résultat au chargement initial."""
+    return render_template("index.html")
 
 
 @app.route("/calcul", methods=["POST"])
 def calcul():
+    """Appel du service SOAP pour calculer le temps de trajet à partir d’un formulaire HTML."""
     distance = float(request.form["distance"])
     autonomie = float(request.form["autonomie"])
     recharge = float(request.form["recharge"])
 
     client = get_soap_client()
     client.service.calcul_temps_trajet(distance, autonomie, recharge)
-
-    # On stocke temporairement le résultat en session
-    # OU dans une variable globale si tu préfères
-    # → Ici solution simple avec `flask.session`
 
     session["resultat"] = round(resultat, 2)
 
@@ -62,12 +88,14 @@ def calcul():
 
 @app.route("/resultat")
 def resultat_page():
+    """Affiche le résultat stocké temporairement en session."""
     resultat = session.pop("resultat", None)
     return render_template("index.html", resultat=resultat)
 
 
 @app.route("/api/calcul_trajet", methods=["POST"])
 def api_calcul_trajet():
+    """API REST simple : calcule uniquement le temps de conduite sans recharge."""
     data = request.json
 
     try:
@@ -75,19 +103,19 @@ def api_calcul_trajet():
     except Exception as e:
         return jsonify({"error": True, "message": str(e)}), 400
 
-    # ⏱️ Temps de conduite SEUL
-    vitesse_moyenne = 80.0  # km/h
+    vitesse_moyenne = 100.0  # km/h
     temps_conduite_h = distance / vitesse_moyenne
 
     return jsonify({"error": False, "drive_h": round(temps_conduite_h, 4)})
 
 
-# ------------------------------------------
+# –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 
 
-# ------------- | Point 2) | ---------------
+# ––– POINT 2 | Bornes de recharge proche –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 @app.route("/station")
 def station():
+    """Retourne les stations de recharge proches d’une position GPS."""
     lat = request.args.get("lat")
     lon = request.args.get("lon")
     rayon = request.args.get("rayon")
@@ -99,6 +127,7 @@ def station():
             status=400,
         )
 
+    # data contient les données brut retournées par l'API
     data = get_stations_proche(lat, lon, rayon)
 
     return Response(
@@ -106,11 +135,12 @@ def station():
     )
 
 
-# ------------------------------------------
+# –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 
 
-# ------------- | Point 3) | ---------------
+# ––– POINT 3 | Géocodage et itinéaire –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 def geocode_city(city):
+    """Transforme un nom de ville en coordonnées GPS via OpenRouteService."""
     url = "https://api.openrouteservice.org/geocode/search"
 
     headers = {"Authorization": ORS_API_KEY}
@@ -122,13 +152,16 @@ def geocode_city(city):
 
     coords = data["features"][0]["geometry"]["coordinates"]
 
+    # ORS retourne [lon, lat]
     lon = coords[0]
     lat = coords[1]
 
-    return lat, lon  # <- IMPORTANT : tu renvoies dans l’ordre que tu veux utiliser
+    # On retourne à "l'inverse" car on utilise à l'inverse en Front-End
+    return lat, lon
 
 
 def get_route(start_coords, end_coords):
+    """Calcule un itinéraire voiture entre deux points GPS."""
     directions_url = "https://api.openrouteservice.org/v2/directions/driving-car"
 
     body = {
@@ -150,8 +183,7 @@ def get_route(start_coords, end_coords):
         return {"error": True, "message": "ORS n’a retourné aucune route."}
 
     route = data["routes"][0]
-
-    # 🔥 DECODE DE LA POLYLINE (la grosse chaîne que tu as reçue)
+    # On reconvertit la chaîne pour pouvoir l'exploiter en Front-End.
     decoded = ors.convert.decode_polyline(route["geometry"])
 
     # print(f"Infos retournées du backend (calcul trajet) :\nDistance_m: {route['summary']['distance']}\nDuration_s: {route['summary']['duration']}\nGeometry: {decoded}")
@@ -159,17 +191,20 @@ def get_route(start_coords, end_coords):
     return {
         "distance_m": route["summary"]["distance"],
         "duration_s": route["summary"]["duration"],
-        "geometry": decoded,  # → maintenant structure GeoJSON
+        "geometry": decoded,
     }
 
 
 @app.route("/route")
 def api_route():
+    """API REST : calcule un itinéraire entre deux villes."""
     start = request.args.get("start")
     end = request.args.get("end")
 
     if not start or not end:
-        return jsonify({"error": True, "message": "start et end obligatoires"})
+        return jsonify(
+            {"error": True, "message": "Départ et Arrivée a remplir obligatoirement !"}
+        )
 
     try:
         start_coords = geocode_city(start)
@@ -183,13 +218,14 @@ def api_route():
         return jsonify({"error": True, "message": str(e)})
 
 
-# ------------- | Point 4) | ---------------
-CHARGETRIP_URL = "https://api.chargetrip.io/graphql"
-CHARGETRIP_CLIENT_ID = "693c273e71c4b62cdd1c4fd8"
-CHARGETRIP_APP_ID = "693c273e71c4b62cdd1c4fda"
+# –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+
+
+# ––– POINT 4 | ChargeTrip (Véhicules) ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 
 
 def debug_print(title, data):
+    """Fonction de debug, non utilisé depuis passage sur le Cloud"""
     print("\n==============================")
     print(title)
     print("==============================")
@@ -199,9 +235,11 @@ def debug_print(title, data):
 
 @app.route("/vehicules")
 def api_vehicules():
+    """Liste paginée des véhicules électriques."""
     page = int(request.args.get("page", 0))
     size = int(request.args.get("size", 20))
 
+    # On vient récupérer l'ensemble des informations voulues
     query = f"""
     query {{
       vehicleList(page: {page}, size: {size}) {{
@@ -298,8 +336,8 @@ def api_vehicule(id):
         r = requests.post(CHARGETRIP_URL, json={"query": query}, headers=headers)
         resp = r.json()
 
-        print("\n=== DEBUG VEHICULE ===")
-        pprint.pprint(resp)
+        # print("\n=== DEBUG VEHICULE ===")
+        # pprint.pprint(resp)
 
         veh = resp.get("data", {}).get("vehicle")
         if not veh:
@@ -323,9 +361,13 @@ def api_vehicule(id):
         return jsonify({"error": True, "message": str(e)}), 500
 
 
-# ------------- | Point 5) | --------------- Trajet via les bornes
+# –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+
+
+# ––– POINT 5 | Itinéaire multi-bornes ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 @app.route("/route_multi", methods=["POST"])
 def api_route_multi():
+    """Calcule un itinéraire passant par plusieurs bornes de recharges"""
     data = request.json
     coords = data.get("coords")
 
@@ -346,3 +388,6 @@ def api_route_multi():
     decoded = ors.convert.decode_polyline(route["geometry"])
 
     return jsonify({"distance_m": route["summary"]["distance"], "geometry": decoded})
+
+
+# –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––

@@ -456,8 +456,6 @@
                ).innerText = `Recharge : ${recharge} min`;
 
                document.querySelector("input[name='autonomie']").value = autonomy;
-
-               // ⛔ Aucun calcul ici (logique respectée)
             });
          }
 
@@ -531,7 +529,7 @@
                   autonomie: parseFloat(
                      document.querySelector("input[name='autonomie']").value,
                   ),
-                  recharge: 0, // ⚠️ plus utilisé côté backend
+                  recharge: 0,
                   nb_recharges: bornesChoisiesGlobal.length,
                }),
             });
@@ -576,12 +574,12 @@
                   document.querySelector("input[name='autonomie']").value,
                );
 
-               /* 🔋 Capacité batterie (kWh) depuis le véhicule courant */
+               /* Capacité batterie (kWh) depuis le véhicule courant */
                const vehicule = vehicules[currentIndex];
                const capaciteKwh =
                   vehiculeDetailsCache[vehicule.id]?.battery?.usable_kwh ?? 50;
 
-               /* 1️⃣ Géométrie brute */
+               /* 1️Géométrie brute */
                const res = await fetch(`/route?start=${start}&end=${end}`);
                const data = await res.json();
                if (data.error) {
@@ -591,7 +589,7 @@
 
                const latlngs = data.geometry.coordinates.map((c) => [c[1], c[0]]);
 
-               /* 📍 MARQUEURS DEPART / ARRIVEE */
+               /* MARQUEURS DEPART / ARRIVEE */
 
                // Nettoyage anciens markers
                if (startMarker) map.removeLayer(startMarker);
@@ -611,7 +609,7 @@
                   .bindPopup('🏁 Arrivée')
                   .addTo(map);
 
-               /* 2️⃣ Sélection INTELLIGENTE des bornes */
+               /* Sélection INTELLIGENTE des bornes */
                const seuilPourcent =
                   parseFloat(document.getElementById('seuil').value) / 100;
                const seuilKm = autonomie * seuilPourcent;
@@ -632,18 +630,18 @@
                      if (!sdata.error && sdata.stations.length) {
                         const borne = borneLaPlusProche(latlngs[i], sdata.stations);
 
-                        /* ⚡ PUISSANCE BORNE */
+                        /* PUISSANCE BORNE */
                         let puissance = parseFloat(borne.puiss_max);
                         if (isNaN(puissance)) puissance = 22;
                         puissance = Math.min(puissance, 150);
 
-                        /* 🔋 ÉNERGIE À RECHARGER (seuil → 80%) */
-                        console.log(capaciteKwh);
-                        console.log(seuilPourcent);
+                        /* ÉNERGIE À RECHARGER (seuil → 80%) */
+                        // console.log(capaciteKwh);
+                        // console.log(seuilPourcent);
                         const energieRechargeKwh = capaciteKwh * (0.8 - seuilPourcent);
 
-                        console.log(`${energieRechargeKwh} / ${puissance} * 60`);
-                        /* ⏱️ TEMPS DE RECHARGE (minutes) */
+                        // console.log(`${energieRechargeKwh} / ${puissance} * 60`);
+                        /* ⏱EMPS DE RECHARGE (minutes) */
                         const tempsRechargeMin = Math.round(
                            (energieRechargeKwh / puissance) * 60,
                         );
@@ -666,7 +664,7 @@
                   }
                }
 
-               /* 3️⃣ Trajet FINAL */
+               /* Trajet FINAL */
                const coordsFinales = [
                   latlngs[0],
                   ...bornesChoisies.map((b) => [b.latitude, b.longitude]),
@@ -682,7 +680,7 @@
                const d2 = await r2.json();
                const finalLatLngs = d2.geometry.coordinates.map((c) => [c[1], c[0]]);
 
-               /* 4️⃣ Affichage UNIQUE */
+               /* Affichage UNIQUE */
                if (routeLayer) map.removeLayer(routeLayer);
                routeLayer = L.polyline(finalLatLngs, {
                   color: 'blue',
@@ -699,11 +697,11 @@
 
                map.fitBounds(routeLayer.getBounds());
 
-               /* 5️⃣ Bornes utiles uniquement */
+               /* Bornes utiles uniquement */
                afficherStations(bornesChoisies);
                afficherBornesDansPanneau(bornesChoisies);
 
-               /* 6️⃣ Distance + temps FINAL */
+               /* Distance + temps FINAL */
                const km = (d2.distance_m / 1000).toFixed(1);
                document.querySelector("input[name='distance']").value = km;
 
