@@ -3,6 +3,7 @@ from spyne import Application, rpc, ServiceBase, Float, Integer, ComplexModel
 from spyne.protocol.soap import Soap11
 from spyne.server.wsgi import WsgiApplication
 import requests
+import time
 
 # –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 
@@ -68,10 +69,9 @@ class TrajetService(ServiceBase):
 
 
 # ––– Service SOAP ––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-def get_stations_proche(latitude, longitude, rayon_m, max_rows=200):
+def get_stations_proche(latitude, longitude, rayon_m, max_rows=15):
     """Récupère les bornes de recharge à proximité d’un point GPS en interrogeant l’API OpenDataSoft (bornes IRVE)."""
     url = "https://odre.opendatasoft.com/api/records/1.0/search/"
-
     params = {
         "dataset": "bornes-irve",
         "geofilter.distance": f"{latitude},{longitude},{rayon_m}",
@@ -116,7 +116,7 @@ def get_stations_proche(latitude, longitude, rayon_m, max_rows=200):
                 continue
             seen_coords.add((lat, lon))
 
-            # 🔍 NOUVELLES INFOS
+            # NOUVELLES INFOS
             acces = fields.get("acces_recharge")
             puiss_max = fields.get("puiss_max")
 
