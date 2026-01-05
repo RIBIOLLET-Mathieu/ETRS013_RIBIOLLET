@@ -25,6 +25,7 @@ import requests
 import openrouteservice as ors
 import pprint
 import os
+from functools import lru_cache
 
 # Partie sécurité. On envoie pas les clés sur Git et le Cloud
 secret_flask = os.getenv("secret_flask")
@@ -48,6 +49,19 @@ if not CHARGETRIP_APP_ID:
 
 if missing:
     raise RuntimeError(f"Variables d'environnement manquantes : {', '.join(missing)}")
+
+# –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+
+
+# ––– Recherche des stations en cache (performance) –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+@lru_cache(maxsize=128)
+def get_stations_proche_cached(lat, lon, rayon):
+    """
+    Cache mémoire des stations proches
+    Clé = (lat, lon, rayon)
+    """
+    return get_stations_proche(lat, lon, rayon)
+
 
 # –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 
@@ -144,7 +158,7 @@ def station():
         )
 
     # data contient les données brut retournées par l'API
-    data = get_stations_proche(lat, lon, rayon)
+    data = get_stations_proche_cached(lat, lon, rayon)
 
     return Response(
         json.dumps(data, ensure_ascii=False), mimetype="application/json; charset=utf-8"
